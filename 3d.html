@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>皮皮 3D 公園測試版</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#9ed9ff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+*{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;background:linear-gradient(#9ed9ff 0 48%,#6fbd52 48% 100%)}
+#hud{position:fixed;z-index:5;left:12px;top:12px;background:#ffffffe8;padding:9px 11px;border-radius:13px;box-shadow:0 3px 14px #0002}
+#msg{position:fixed;z-index:5;right:12px;top:12px;background:#253225cc;color:white;padding:9px 11px;border-radius:13px;max-width:55vw;font-size:13px}
+#stick{position:fixed;z-index:10;left:20px;bottom:52px;width:128px;height:128px;border-radius:50%;border:2px solid #ffffffbb;background:#ffffff44;touch-action:none}
+#knob{position:absolute;width:48px;height:48px;left:40px;top:40px;border-radius:50%;background:#fffffff0;box-shadow:0 2px 10px #0003}
+#reset{position:fixed;z-index:10;right:22px;bottom:66px;width:68px;height:68px;border:0;border-radius:50%;font-weight:700;background:#fffffff0}
+#legend{position:fixed;left:50%;bottom:8px;transform:translateX(-50%);z-index:5;background:#ffffffe6;padding:6px 10px;border-radius:12px;font-size:11px;white-space:nowrap}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><b>皮皮 3D 公園 🐶</b><br>分數：<span id="score">0</span><br>玩具：<span id="toys">0</span>/3</div>
+<div id="msg">拖左下搖桿移動皮皮</div>
+<div id="stick"><div id="knob"></div></div>
+<button id="reset">重來</button>
+<div id="legend">🎾 +10　🧸 +5　💩 -10　💦 -3　泥巴 -2</div>
+<script>
+const c=document.getElementById('c'),ctx=c.getContext('2d');
+const scoreEl=document.getElementById('score'),toysEl=document.getElementById('toys'),msg=document.getElementById('msg');
+let W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;c.width=W*DPR;c.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0)}
+addEventListener('resize',resize);resize();
+
+const world={size:18};
+const player={x:0,z:2,a:Math.PI};
+let score=0,toys=0,lastHazard=0;
+const trees=[[-6,-6],[6,-6],[-6,6],[6,6]];
+const benches=[[-3,1],[4,-2]];
+const pees=[[-5,0],[5,1],[1,5]];
+const muds=[[-2.5,-4],[4,5]];
+const ball={x:3,z:-4},toy={x:-4,z:3},poop={x:5,z:-5},mantou={x:4.5,z:-5.5},yuanbao={x:-4.7,z:3.3};
+
+function randPoint(){
+ for(let i=0;i<100;i++){
+   let x=-7+Math.random()*14,z=-7+Math.random()*14;
+   if(Math.abs(x)<1.5)continue;
+   if(trees.every(t=>Math.hypot(x-t[0],z-t[1])>1.5)&&benches.every(b=>Math.hypot(x-b[0],z-b[1])>1.7))return{x,z};
+ }
+ return{x:4,z:4};
+}
+function respawn(o){Object.assign(o,randPoint())}
+function respawnToy(){respawn(toy);yuanbao.x=toy.x-.65;yuanbao.z=toy.z+.3}
+function respawnPoop(){respawn(poop);mantou.x=poop.x-.7;mantou.z=poop.z-.6}
+
+function project(x,y,z){
+ const camDist=5.2,camH=3.0;
+ const ca=Math.cos(-player.a),sa=Math.sin(-player.a);
+ let dx=x-player.x,dz=z-player.z;
+ let rx=dx*ca-dz*sa, rz=dx*sa+dz*ca+camDist;
+ let ry=y-camH;
+ if(rz<0.15)return null;
+ const f=Math.min(W,H)*0.9;
+ return{x:W/2+rx/rz*f,y:H*0.52-ry/rz*f,s:f/rz,d:rz};
+}
+function poly(points,fill,stroke){
+ const ps=points.map(p=>project(...p)); if(ps.some(p=>!p))return;
+ ctx.beginPath();ctx.moveTo(ps[0].x,ps[0].y);for(let i=1;i<ps.length;i++)ctx.lineTo(ps[i].x,ps[i].y);ctx.closePath();ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.stroke()}
+}
+function box(x,y,z,w,h,d,color){
+ const X=w/2,Z=d/2;
+ const v=[
+ [x-X,y,z-Z],[x+X,y,z-Z],[x+X,y,z+Z],[x-X,y,z+Z],
+ [x-X,y+h,z-Z],[x+X,y+h,z-Z],[x+X,y+h,z+Z],[x-X,y+h,z+Z]
+ ];
+ const faces=[
+ [[0,1,5,4],.72],[[1,2,6,5],.84],[[2,3,7,6],.65],[[3,0,4,7],.78],[[4,5,6,7],1]
+ ];
+ for(const [ids,k] of faces){
+   const rgb=parseInt(color.slice(1),16),r=(rgb>>16)&255,g=(rgb>>8)&255,b=rgb&255;
+   poly(ids.map(i=>v[i]),`rgb(${r*k|0},${g*k|0},${b*k|0})`);
+ }
+}
+function spriteCircle(x,y,z,r,color,label){
+ const p=project(x,y,z);if(!p)return;
+ ctx.beginPath();ctx.arc(p.x,p.y,r*p.s,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();
+ if(label){ctx.font=`${Math.max(10,18*p.s)}px system-ui`;ctx.textAlign='center';ctx.fillStyle='#111';ctx.fillText(label,p.x,p.y-r*p.s-4)}
+}
+function drawGround(){
+ ctx.clearRect(0,0,W,H);
+ const horizon=H*.48;
+ let sky=ctx.createLinearGradient(0,0,0,horizon);sky.addColorStop(0,'#93d7ff');sky.addColorStop(1,'#dff3ff');ctx.fillStyle=sky;ctx.fillRect(0,0,W,horizon);
+ let grass=ctx.createLinearGradient(0,horizon,0,H);grass.addColorStop(0,'#83cf65');grass.addColorStop(1,'#4f9c3f');ctx.fillStyle=grass;ctx.fillRect(0,horizon,W,H-horizon);
+ // path as perspective quad
+ poly([[-1.4,0,-9],[1.4,0,-9],[1.4,0,9],[-1.4,0,9]],'#c9b17c');
+}
+function draw(){
+ drawGround();
+ const objs=[];
+ for(const [x,z] of trees)objs.push({d:Math.hypot(x-player.x,z-player.z),fn:()=>{box(x,0,z,.45,1.6,.45,'#704522');spriteCircle(x,2.25,z,1.0,'#2f7f42')}});
+ for(const [x,z] of benches)objs.push({d:Math.hypot(x-player.x,z-player.z),fn:()=>{box(x,.45,z,2.1,.18,.55,'#8b5e3c');box(x,.75,z-.25,2.1,.65,.15,'#8b5e3c')}});
+ for(const [x,z] of pees)objs.push({d:Math.hypot(x-player.x,z-player.z),fn:()=>spriteCircle(x,.03,z,.42,'#e8dd4f')});
+ for(const [x,z] of muds)objs.push({d:Math.hypot(x-player.x,z-player.z),fn:()=>spriteCircle(x,.03,z,.55,'#765439')});
+ objs.push({d:Math.hypot(ball.x-player.x,ball.z-player.z),fn:()=>spriteCircle(ball.x,.25,ball.z,.22,'#efca32','🎾')});
+ objs.push({d:Math.hypot(toy.x-player.x,toy.z-player.z),fn:()=>spriteCircle(toy.x,.22,toy.z,.2,'#d65b76','🧸')});
+ objs.push({d:Math.hypot(poop.x-player.x,poop.z-player.z),fn:()=>spriteCircle(poop.x,.18,poop.z,.22,'#704426','💩')});
+ objs.push({d:Math.hypot(mantou.x-player.x,mantou.z-player.z),fn:()=>{box(mantou.x,0,mantou.z,1.25,.85,1.15,'#e58c2f');spriteCircle(mantou.x,1.1,mantou.z,.32,'#e58c2f','饅頭')}});
+ objs.push({d:Math.hypot(yuanbao.x-player.x,yuanbao.z-player.z),fn:()=>{box(yuanbao.x,0,yuanbao.z,.65,.72,1.1,'#fff6e8');spriteCircle(yuanbao.x,.95,yuanbao.z,.25,'#ef9a48','元寶')}});
+ // Pipi as foreground 3D dog
+ objs.sort((a,b)=>b.d-a.d);for(const o of objs)o.fn();
+ const px=W/2,py=H*.72;
+ ctx.fillStyle='#fff';ctx.beginPath();ctx.ellipse(px,py,34,25,0,0,Math.PI*2);ctx.fill();
+ ctx.beginPath();ctx.arc(px,py-28,24,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#222';ctx.beginPath();ctx.arc(px-8,py-31,3,0,7);ctx.arc(px+8,py-31,3,0,7);ctx.fill();
+ ctx.font='12px system-ui';ctx.textAlign='center';ctx.fillStyle='#222';ctx.fillText('皮皮',px,py+47);
+}
+
+function blocked(x,z){
+ if(Math.abs(x)>8.1||Math.abs(z)>8.1)return true;
+ if(trees.some(t=>Math.hypot(x-t[0],z-t[1])<.9))return true;
+ if(benches.some(b=>Math.hypot(x-b[0],z-b[1])<1.2))return true;
+ return false;
+}
+function points(n,t){score+=n;scoreEl.textContent=score;msg.textContent=t}
+function check(){
+ let now=performance.now();
+ if(Math.hypot(player.x-ball.x,player.z-ball.z)<.7){points(10,'撿到球！+10 🎾');respawn(ball)}
+ if(Math.hypot(player.x-toy.x,player.z-toy.z)<.7){toys++;toysEl.textContent=toys;points(5,'搶到元寶玩具！+5 🧸');respawnToy();if(toys===3)msg.textContent='任務完成！元寶氣炸 😾'}
+ if(now-lastHazard>900&&Math.hypot(player.x-poop.x,player.z-poop.z)<.7){lastHazard=now;points(-10,'踩到饅頭大便 💩 -10');respawnPoop()}
+ if(now-lastHazard>900)for(const p of pees)if(Math.hypot(player.x-p[0],player.z-p[1])<.75){lastHazard=now;points(-3,'踩到狗尿 💦 -3');break}
+ if(now-lastHazard>900)for(const p of muds)if(Math.hypot(player.x-p[0],player.z-p[1])<.8){lastHazard=now;points(-2,'白毛踩泥巴 -2');break}
+}
+const joy={x:0,y:0},stick=document.getElementById('stick'),knob=document.getElementById('knob');let drag=false,pid=0;
+function jm(e){let r=stick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,m=r.width*.33,d=Math.hypot(dx,dy)||1;if(d>m){dx=dx/d*m;dy=dy/d*m}joy.x=dx/m;joy.y=dy/m;knob.style.transform=`translate(${dx}px,${dy}px)`}
+stick.onpointerdown=e=>{drag=true;pid=e.pointerId;stick.setPointerCapture(pid);jm(e);e.preventDefault()};stick.onpointermove=e=>{if(drag&&e.pointerId===pid)jm(e)};function end(){drag=false;joy.x=joy.y=0;knob.style.transform='translate(0,0)'}stick.onpointerup=end;stick.onpointercancel=end;
+document.oncontextmenu=e=>e.preventDefault();document.onselectstart=e=>e.preventDefault();
+
+document.getElementById('reset').onclick=()=>{score=toys=0;scoreEl.textContent=toysEl.textContent=0;player.x=0;player.z=2;player.a=Math.PI;respawn(ball);respawnToy();respawnPoop();msg.textContent='重新開始！'};
+let prev=performance.now();
+function loop(t){let dt=Math.min((t-prev)/1000,.04);prev=t;let turn=joy.x*2.3*dt,forward=-joy.y*4*dt;player.a+=turn;let nx=player.x+Math.sin(player.a)*forward,nz=player.z+Math.cos(player.a)*forward;if(!blocked(nx,nz)){player.x=nx;player.z=nz}check();draw();requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
