@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>皮皮 3D 公園</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#bfe7ff;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+*{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+canvas{display:block;touch-action:none}
+#hud,#msg,#legend{position:fixed;z-index:5;background:#ffffffe6;border-radius:12px;padding:8px 10px}
+#hud{top:12px;left:12px} #msg{top:12px;right:12px;max-width:55vw} #legend{bottom:8px;left:50%;transform:translateX(-50%);font-size:11px;white-space:nowrap}
+#stick{position:fixed;left:20px;bottom:48px;width:130px;height:130px;border-radius:50%;border:2px solid #ffffffaa;background:#ffffff44;z-index:10;touch-action:none}
+#knob{position:absolute;left:41px;top:41px;width:48px;height:48px;border-radius:50%;background:#fffffff0}
+#reset{position:fixed;right:22px;bottom:62px;width:66px;height:66px;border:0;border-radius:50%;background:#fffffff0;font-weight:700;z-index:10}
+</style>
+</head>
+<body>
+<div id="hud"><b>皮皮 3D 公園 🐶</b><br>分數：<span id="score">0</span><br>元寶玩具：<span id="toys">0</span>/3</div>
+<div id="msg">拖左下搖桿跑起來！</div>
+<div id="stick"><div id="knob"></div></div>
+<button id="reset">重來</button>
+<div id="legend">🎾+10　🧸+5　💩-10　💦-3　🟤-2</div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
+
+const scoreEl=document.querySelector('#score'), toysEl=document.querySelector('#toys'), msg=document.querySelector('#msg');
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0xbfe7ff); scene.fog=new THREE.Fog(0xbfe7ff,18,36);
+const camera=new THREE.PerspectiveCamera(62,innerWidth/innerHeight,.1,100);
+const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(innerWidth,innerHeight); renderer.shadowMap.enabled=true; document.body.prepend(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff,0x557744,2.2));
+const sun=new THREE.DirectionalLight(0xffffff,2.2); sun.position.set(8,14,6); sun.castShadow=true; scene.add(sun);
+const M=c=>new THREE.MeshStandardMaterial({color:c,roughness:.85});
+function add(g,c,x=0,y=0,z=0){const m=new THREE.Mesh(g,M(c));m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;return m}
+
+const ground=add(new THREE.PlaneGeometry(18,18),0x72bf54); ground.rotation.x=-Math.PI/2; scene.add(ground);
+const path=add(new THREE.PlaneGeometry(3,18),0xcab37d,0,.01,0); path.rotation.x=-Math.PI/2; scene.add(path);
+
+const blocks=[];
+function tree(x,z,s=1){let t=add(new THREE.CylinderGeometry(.2,.27,1.4,10),0x744a28,x,.7,z);scene.add(t);let c=add(new THREE.SphereGeometry(.9*s,14,10),0x2f7f42,x,1.8*s,z);scene.add(c);blocks.push({x,z,r:.8*s})}
+tree(-6.5,-6);tree(6.5,-6,1.1);tree(-6.5,6);tree(6.5,6,1.15);
+function bench(x,z){let g=new THREE.Group();let a=add(new THREE.BoxGeometry(2.2,.18,.55),0x8b5e3c,0,.65,0);g.add(a);let b=add(new THREE.BoxGeometry(2.2,.7,.15),0x8b5e3c,0,1,-.28);g.add(b);g.position.set(x,0,z);scene.add(g);blocks.push({x,z,r:1.2})}
+bench(-3.6,2.5); bench(4.2,-2);
+
+function pipiModel(){let g=new THREE.Group();let b=add(new THREE.SphereGeometry(.5,16,12),0xf8f7ef,0,.65,0);b.scale.set(1.1,.8,1.45);g.add(b);g.add(add(new THREE.SphereGeometry(.38,16,12),0xffffff,0,.95,.62));g.add(add(new THREE.SphereGeometry(.07,10,8),0x222222,0,.9,1.01));return g}
+const pipi=pipiModel();scene.add(pipi);
+
+function cat(fat=false){let g=new THREE.Group();let col=fat?0xe58c2f:0xfff7eb;let b=add(new THREE.SphereGeometry(fat?.6:.44,16,12),col,0,.6,0);b.scale.set(fat?1.35:.75,.8,fat?1.1:1.5);g.add(b);g.add(add(new THREE.SphereGeometry(fat?.4:.3,16,12),col,0,.98,.45));return g}
+const mantou=cat(true), yuanbao=cat(false);scene.add(mantou,yuanbao);
+
+const ball=add(new THREE.SphereGeometry(.22,14,10),0xf0ca32,0,.22,0);scene.add(ball);
+const toy=add(new THREE.SphereGeometry(.2,14,10),0xd65b76,0,.2,0);scene.add(toy);
+const poop=new THREE.Group();[0,.11,.21].forEach((y,i)=>poop.add(add(new THREE.SphereGeometry(.2-i*.04,12,8),0x704426,0,.1+y,0)));scene.add(poop);
+
+const pees=[],muds=[];
+function puddle(x,z,c,s=.55){let p=add(new THREE.CircleGeometry(s,24),c,x,.02,z);p.rotation.x=-Math.PI/2;scene.add(p);return p}
+pees.push(puddle(-5,1,0xe6db49),puddle(5,1.3,0xe6db49),puddle(.7,5,0xe6db49));
+muds.push(puddle(-2.7,-4.2,0x765439,.7),puddle(4.2,5,0x765439,.8));
+
+function safe(){for(let i=0;i<80;i++){let x=-7+Math.random()*14,z=-7+Math.random()*14;if(Math.abs(x)<1.8)continue;if(blocks.every(b=>Math.hypot(x-b.x,z-b.z)>b.r+1))return{x,z}}return{x:4,z:4}}
+function place(o){let p=safe();o.position.x=p.x;o.position.z=p.z}
+function toySpawn(){place(toy);yuanbao.position.set(toy.position.x-.65,0,toy.position.z+.35)}
+function poopSpawn(){place(poop);mantou.position.set(poop.position.x-.7,0,poop.position.z-.7)}
+place(ball);toySpawn();poopSpawn();
+
+let score=0,toys=0,lastPoop=0,lastPee=0,lastMud=0,yaw=0;
+const dist=(a,b)=>Math.hypot(a.position.x-b.position.x,a.position.z-b.position.z);
+function points(n,t){score+=n;scoreEl.textContent=score;msg.textContent=t}
+function check(){let n=performance.now();
+ if(dist(pipi,ball)<.6){points(10,'撿到球！+10 🎾');place(ball)}
+ if(dist(pipi,toy)<.6){toys++;toysEl.textContent=toys;points(5,'搶到元寶玩具！+5 🧸');toySpawn();if(toys===3)msg.textContent='任務完成！元寶氣炸 😾'}
+ if(dist(pipi,poop)<.55&&n-lastPoop>1200){lastPoop=n;points(-10,'踩到饅頭大便 💩 -10');poopSpawn()}
+ if(n-lastPee>1000)for(let p of pees)if(dist(pipi,p)<.7){lastPee=n;points(-3,'踩到狗尿 💦 -3');break}
+ if(n-lastMud>1100)for(let p of muds)if(dist(pipi,p)<.8){lastMud=n;points(-2,'白毛踩泥巴 🟤 -2');break}
+}
+function blocked(x,z){if(Math.abs(x)>8.1||Math.abs(z)>8.1)return true;return blocks.some(b=>Math.hypot(x-b.x,z-b.z)<b.r+.4)}
+
+const joy={x:0,y:0},stick=document.querySelector('#stick'),knob=document.querySelector('#knob');let drag=false;
+function joyMove(e){let r=stick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,m=r.width*.33,d=Math.hypot(dx,dy)||1;if(d>m){dx=dx/d*m;dy=dy/d*m}joy.x=dx/m;joy.y=dy/m;knob.style.transform=`translate(${dx}px,${dy}px)`}
+stick.onpointerdown=e=>{drag=true;stick.setPointerCapture(e.pointerId);joyMove(e);e.preventDefault()};stick.onpointermove=e=>{if(drag)joyMove(e)};function end(){drag=false;joy.x=joy.y=0;knob.style.transform='translate(0,0)'}stick.onpointerup=end;stick.onpointercancel=end;
+document.oncontextmenu=e=>e.preventDefault();document.onselectstart=e=>e.preventDefault();
+
+document.querySelector('#reset').onclick=()=>{score=toys=0;scoreEl.textContent=toysEl.textContent=0;pipi.position.set(0,0,0);place(ball);toySpawn();poopSpawn();msg.textContent='重新開始！'};
+
+const clock=new THREE.Clock();
+function loop(){requestAnimationFrame(loop);let dt=Math.min(clock.getDelta(),.035),ix=joy.x,iy=-joy.y,m=Math.hypot(ix,iy);
+ if(m>.08){ix/=Math.max(1,m);iy/=Math.max(1,m);let ty=Math.atan2(ix,iy),d=((ty-yaw+Math.PI)%(Math.PI*2))-Math.PI;yaw+=d*Math.min(1,dt*10);let nx=pipi.position.x+Math.sin(yaw)*4*dt,nz=pipi.position.z+Math.cos(yaw)*4*dt;if(!blocked(nx,nz)){pipi.position.x=nx;pipi.position.z=nz}pipi.rotation.y=yaw;pipi.position.y=Math.abs(Math.sin(performance.now()*.012))*.04}else pipi.position.y=0;
+ check();
+ let desired=pipi.position.clone().add(new THREE.Vector3(-Math.sin(yaw)*4.5,3.1,-Math.cos(yaw)*4.5));camera.position.lerp(desired,1-Math.pow(.001,dt));camera.lookAt(pipi.position.clone().add(new THREE.Vector3(0,.8,0)));renderer.render(scene,camera)
+}
+loop();
+onresize=()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
+</script>
+</body>
+</html>
